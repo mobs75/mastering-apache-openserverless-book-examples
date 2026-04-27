@@ -1,0 +1,38 @@
+# opsfile.yml — ops CLI integration for the example plugin
+# Discovered automatically by ops CLI scanning plugins/*/opsfile.yml
+# Chapter 4 — Mastering Apache OpenServerless
+version: '3'
+
+tasks:
+  install:
+    desc: "Install the example operator (CRD + Deployment)"
+    cmds:
+      - kubectl apply -f {{.PLUGIN_DIR}}/crd.yaml
+      - kubectl apply -f {{.PLUGIN_DIR}}/operator-deployment.yaml
+
+  deploy:
+    desc: "Deploy an Example instance"
+    cmds:
+      - |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: example.nuvolaris.org/v1
+        kind: Example
+        metadata:
+          name: {{.NAME | default "my-example"}}
+          namespace: {{.NAMESPACE | default "nuvolaris"}}
+        spec:
+          replicas: {{.REPLICAS | default 1}}
+          version: "{{.VERSION | default "1.0.0"}}"
+          storage: "{{.STORAGE | default "1Gi"}}"
+        EOF
+
+  status:
+    desc: "Show status of Example instances"
+    cmds:
+      - kubectl get examples -n {{.NAMESPACE | default "nuvolaris"}}
+      - kubectl get pods -n {{.NAMESPACE | default "nuvolaris"}} -l managed-by=openserverless-operator
+
+  remove:
+    desc: "Remove an Example instance (OwnerRefs handle GC)"
+    cmds:
+      - kubectl delete example {{.NAME | default "my-example"}} -n {{.NAMESPACE | default "nuvolaris"}}

@@ -1,0 +1,8 @@
+# kustomization.yaml — assembled by the operator at runtime
+# Chapter 4 — Mastering Apache OpenServerless
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - templates/statefulset.yaml.j2
+  - templates/service.yaml.j2
+  - templates/init-job.yaml.j2

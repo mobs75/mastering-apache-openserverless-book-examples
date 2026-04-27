@@ -1,0 +1,18 @@
+# Jinja2 template — Init Job for post-configuration
+# Chapter 4 — Mastering Apache OpenServerless
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ name }}-init
+  namespace: {{ namespace }}
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: init
+          image: {{ image }}
+          command: ["/bin/sh", "-c", "echo 'Post-config for {{ name }} complete'"]
+          env:
+            - name: SERVICE_HOST
+              value: "{{ name }}.{{ namespace }}.svc.cluster.local"

@@ -1,0 +1,49 @@
+# Taskfile.yml — Main Taskfile example for OpenServerless
+# Chapter 6 — Mastering Apache OpenServerless
+#
+# This is the root Taskfile included by the ops CLI.
+# It orchestrates cluster setup, core deploy and plugin deploy.
+#
+# Usage:
+#   ops setup        — full platform setup
+#   ops deploy       — deploy/update all components
+#   ops status       — show cluster status
+#   ops undeploy     — remove all components
+version: '3'
+
+includes:
+  cluster: ./cluster/Taskfile.yml
+  core:    ./core/Taskfile.yml
+  plugins: ./plugins/Taskfile.yml
+
+vars:
+  NAMESPACE: nuvolaris
+  KUBECONFIG:
+    sh: echo "${KUBECONFIG:-$HOME/.kube/config}"
+
+tasks:
+  setup:
+    desc: "Full OpenServerless cluster setup"
+    cmds:
+      - task: cluster:setup
+      - task: core:deploy
+      - task: plugins:deploy
+      - task: status
+
+  deploy:
+    desc: "Deploy or update all components"
+    cmds:
+      - task: core:deploy
+      - task: plugins:deploy
+
+  status:
+    desc: "Show cluster status"
+    cmds:
+      - kubectl get pods -n {{.NAMESPACE}}
+      - kubectl get wsk/controller -n {{.NAMESPACE}} -o yaml | grep -A 10 components
+
+  undeploy:
+    desc: "Remove all OpenServerless components"
+    cmds:
+      - kubectl delete wsk/controller -n {{.NAMESPACE}} --ignore-not-found
+      - kubectl delete namespace {{.NAMESPACE}} --ignore-not-found

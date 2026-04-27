@@ -1,0 +1,55 @@
+# Jinja2 template — StatefulSet for the example plugin
+# Chapter 4 — Mastering Apache OpenServerless
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ name }}
+  namespace: {{ namespace }}
+  labels:
+    app: {{ name }}
+    managed-by: openserverless-operator
+spec:
+  replicas: {{ replicas }}
+  selector:
+    matchLabels:
+      app: {{ name }}
+  serviceName: {{ name }}
+  template:
+    metadata:
+      labels:
+        app: {{ name }}
+    spec:
+      containers:
+        - name: example
+          image: {{ image }}
+          ports:
+            - containerPort: 8080
+          env:
+            - name: EXAMPLE_VERSION
+              value: "{{ version }}"
+            - name: EXAMPLE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ secret_name }}
+                  key: password
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ storage_size }}

@@ -1,0 +1,10 @@
+# Sample Custom Resource for testing — Chapter 4
+apiVersion: example.nuvolaris.org/v1
+kind: Example
+metadata:
+  name: my-example
+  namespace: nuvolaris
+spec:
+  replicas: 1
+  version: "1.0.0"
+  storage: "1Gi"

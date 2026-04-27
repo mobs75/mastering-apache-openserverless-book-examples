@@ -1,0 +1,17 @@
+# Jinja2 template — Service for the example plugin
+# Chapter 4 — Mastering Apache OpenServerless
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ name }}
+  namespace: {{ namespace }}
+  labels:
+    app: {{ name }}
+spec:
+  selector:
+    app: {{ name }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  clusterIP: None
