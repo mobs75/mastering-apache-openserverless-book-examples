@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: spark-master
+  namespace: {{namespace}}
+  labels:
+    app: spark
+    component: spark-master
+spec:
+  serviceName: spark-master
+  replicas: {{master_replicas}}
+  selector:
+    matchLabels:
+      app: spark
+      component: spark-master
+  template:
+    metadata:
+      labels:
+        app: spark
+        component: spark-master
+    spec:
+      serviceAccountName: spark
+      securityContext:
+        fsGroup: {{spark_uid}}
+      containers:
+      - name: spark-master
+        image: {{spark_image}}
+        imagePullPolicy: IfNotPresent
+        command:
+          - /bin/bash
+          - -c
+          - |
+            mkdir -p /opt/spark/conf /opt/spark/logs {{event_log_dir}}
+            export SPARK_NO_DAEMONIZE=true
+            /opt/spark/sbin/start-master.sh
+            tail -F /opt/spark/logs/* || sleep infinity
+        ports:
+        - name: spark
+          containerPort: {{master_port}}
+          protocol: TCP
+        - name: webui
+          containerPort: {{master_webui_port}}
+          protocol: TCP
+        env:
+        - name: SPARK_MODE
+          value: "master"
+        - name: SPARK_MASTER_PORT
+          value: "{{master_port}}"
+        - name: SPARK_MASTER_WEBUI_PORT
+          value: "{{master_webui_port}}"
+        - name: SPARK_NO_DAEMONIZE
+          value: "true"
+        - name: SPARK_CONF_DIR
+          value: "/etc/spark-config"
+        resources:
+          requests:
+            cpu: 200m
+            memory: {{master_memory}}
+          limits:
+            cpu: {{master_cpu}}
+            memory: {{master_memory}}
+        volumeMounts:
+        - name: spark-config
+          mountPath: /etc/spark-config
+        - name: spark-logs
+          mountPath: /opt/spark/logs
+        livenessProbe:
+          httpGet:
+            path: /
+            port: webui
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /
+            port: webui
+          initialDelaySeconds: 15
+          periodSeconds: 5
+          timeoutSeconds: 3
+      volumes:
+      - name: spark-config
+        configMap:
+          name: spark-config
+      - name: spark-logs
+        emptyDir: {}
