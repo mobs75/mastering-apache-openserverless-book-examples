@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # ── CREATE ─────────────────────────────────────────────────────────────────
 
-@kopf.on.create('example.nuvolaris.org', 'v1', 'examples')
+@kopf.on.create('example.openserverless.org', 'v1', 'examples')
 def create_example(spec, name, namespace, **kwargs):
     """
     Called when a new Example CR is created.
@@ -31,7 +31,7 @@ def create_example(spec, name, namespace, **kwargs):
     data = cfg.load_config(spec, name, namespace)
 
     # 2. Render Jinja2 templates
-    # (in a real plugin: from nuvolaris import kustomize, kube)
+    # (in a real plugin: from openserverless import kustomize, kube)
     # resources = kustomize.render_templates('plugins/example/templates', data)
 
     # 3. Apply OwnerReference so Kubernetes GC cleans up on CR delete
@@ -50,7 +50,7 @@ def create_example(spec, name, namespace, **kwargs):
 
 # ── UPDATE ─────────────────────────────────────────────────────────────────
 
-@kopf.on.update('example.nuvolaris.org', 'v1', 'examples')
+@kopf.on.update('example.openserverless.org', 'v1', 'examples')
 def update_example(spec, name, namespace, **kwargs):
     """
     Called when the Example CR spec changes.
@@ -65,7 +65,7 @@ def update_example(spec, name, namespace, **kwargs):
 
 # ── DELETE ─────────────────────────────────────────────────────────────────
 
-@kopf.on.delete('example.nuvolaris.org', 'v1', 'examples')
+@kopf.on.delete('example.openserverless.org', 'v1', 'examples')
 def delete_example(spec, name, namespace, **kwargs):
     """
     Called when the Example CR is deleted.

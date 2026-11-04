@@ -13,12 +13,12 @@
 #   ./get-credentials.sh --env        # print as export statements
 #
 # Requirements:
-#   - kubectl configured and pointing to the nuvolaris namespace
+#   - kubectl configured and pointing to the cluster where OpenServerless runs
 #   - jq installed (apt install jq / brew install jq)
 
 set -euo pipefail
 
-NS="nuvolaris"
+NS="openserverless"
 WRITE_WSKPROPS=false
 ENV_FORMAT=false
 
@@ -42,27 +42,22 @@ section "OpenWhisk / ops CLI"
 COUCH_PASS=$(kubectl exec -n "$NS" couchdb-0 -- \
     env 2>/dev/null | grep COUCHDB_PASSWORD | cut -d= -f2 || echo "")
 
-if [ -n "$COUCH_PASS" ]; then
-    AUTH=$(kubectl exec -n "$NS" couchdb-0 -- \
-        curl -s "http://whisk_admin:${COUCH_PASS}@localhost:5984/${NS}_subjects/nuvolaris" \
-        2>/dev/null | python3 -c \
-        'import sys,json; d=json.load(sys.stdin); print(d["uuid"]+":"+d["key"])' \
-        2>/dev/null || echo "")
-else
-    AUTH=""
-fi
-
-APIHOST="http://localhost:30233"
+# Same sources used by "ops setup openserverless login":
+# the key of the openserverless namespace in the Whisk CR, and the
+# apihost annotation of the "config" ConfigMap
+AUTH=$(get_crd '{.spec.openwhisk.namespaces.openserverless}')
+APIHOST=$(kubectl get cm/config -n "$NS" \
+    -o jsonpath='{.metadata.annotations.apihost}' 2>/dev/null || echo "")
 
 echo "APIHOST   = $APIHOST"
 echo "AUTH      = $AUTH"
-echo "NAMESPACE = $NS"
+echo "NAMESPACE = openserverless"
 
 if [ "$WRITE_WSKPROPS" = true ] && [ -n "$AUTH" ]; then
     cat > ~/.wskprops << WSKEOF
 APIHOST=$APIHOST
 AUTH=$AUTH
-NAMESPACE=$NS
+NAMESPACE=openserverless
 WSKEOF
     echo "→ ~/.wskprops written"
 fi
@@ -77,40 +72,40 @@ echo "URL       = http://${COUCH_USER}:${COUCH_PASS}@couchdb.${NS}.svc.cluster.l
 
 # ── Redis ────────────────────────────────────────────────────────────────────
 section "Redis"
-REDIS_PASS=$(get_crd '{.spec.redis.nuvolaris.password}')
+REDIS_PASS=$(get_crd '{.spec.redis.openserverless.password}')
 echo "HOST      = redis.${NS}.svc.cluster.local:6379"
 echo "PASSWORD  = $REDIS_PASS"
 echo "URL       = redis://:${REDIS_PASS}@redis.${NS}.svc.cluster.local:6379"
 
 # ── PostgreSQL ───────────────────────────────────────────────────────────────
 section "PostgreSQL"
-PG_PASS=$(get_crd '{.spec.postgres.nuvolaris.password}')
+PG_PASS=$(get_crd '{.spec.postgres.openserverless.password}')
 PG_ADMIN_PASS=$(get_crd '{.spec.postgres.admin.password}')
-echo "HOST      = nuvolaris-postgres.${NS}.svc.cluster.local:5432"
-echo "DATABASE  = nuvolaris"
-echo "USER      = nuvolaris"
+echo "HOST      = openserverless-postgres.${NS}.svc.cluster.local:5432"
+echo "DATABASE  = openserverless"
+echo "USER      = openserverless"
 echo "PASSWORD  = $PG_PASS"
 echo "ADMIN_PWD = $PG_ADMIN_PASS"
-echo "URL       = postgresql://nuvolaris:${PG_PASS}@nuvolaris-postgres.${NS}.svc.cluster.local:5432/nuvolaris"
+echo "URL       = postgresql://openserverless:${PG_PASS}@openserverless-postgres.${NS}.svc.cluster.local:5432/openserverless"
 echo ""
 echo "NOTE: Run once after deploy to grant schema permissions:"
-echo "  PGPASSWORD=$PG_ADMIN_PASS psql -U postgres -d nuvolaris \\"
-echo "    -h nuvolaris-postgres.${NS}.svc.cluster.local \\"
-echo "    -c \"GRANT ALL ON SCHEMA public TO nuvolaris;\""
+echo "  PGPASSWORD=$PG_ADMIN_PASS psql -U postgres -d openserverless \\"
+echo "    -h openserverless-postgres.${NS}.svc.cluster.local \\"
+echo "    -c \"GRANT ALL ON SCHEMA public TO openserverless;\""
 
 # ── FerretDB / MongoDB ───────────────────────────────────────────────────────
 section "FerretDB / MongoDB"
-echo "HOST      = nuvolaris-mongodb-svc.${NS}.svc.cluster.local:27017"
-echo "USER      = nuvolaris"
-echo "PASSWORD  = $PG_PASS  (same as PostgreSQL nuvolaris password)"
+echo "HOST      = openserverless-mongodb-svc.${NS}.svc.cluster.local:27017"
+echo "USER      = openserverless"
+echo "PASSWORD  = $PG_PASS  (same as PostgreSQL openserverless password)"
 echo "AUTH_MECH = PLAIN (not SCRAM — FerretDB v1.6.0 limitation)"
-echo "URL       = mongodb://nuvolaris:${PG_PASS}@nuvolaris-mongodb-svc.${NS}.svc.cluster.local:27017/?authSource=\$external&authMechanism=PLAIN"
+echo "URL       = mongodb://openserverless:${PG_PASS}@openserverless-mongodb-svc.${NS}.svc.cluster.local:27017/?authSource=\$external&authMechanism=PLAIN"
 
 # ── SeaweedFS / S3 ───────────────────────────────────────────────────────────
 section "SeaweedFS / S3"
-SEAWEED_PASS=$(get_crd '{.spec.seaweedfs.nuvolaris.password}')
+SEAWEED_PASS=$(get_crd '{.spec.seaweedfs.openserverless.password}')
 echo "ENDPOINT  = http://seaweedfs.${NS}.svc.cluster.local:9000"
-echo "ACCESS_KEY= nuvolaris"
+echo "ACCESS_KEY= openserverless"
 echo "SECRET_KEY= $SEAWEED_PASS"
 echo "NOTE: signature_version='s3v4' required, region_name='us-east-1' (ignored by SeaweedFS)"
 
@@ -119,17 +114,6 @@ section "Kafka"
 echo "BROKER    = kafka.${NS}.svc.cluster.local:9092"
 echo "NOTE: No authentication. Use application-specific topic names (not internal OW topics)"
 echo "INTERNAL TOPICS (do NOT use): _completed0, health, ..."
-
-# ── MinIO (if enabled) ───────────────────────────────────────────────────────
-section "MinIO (if enabled)"
-MINIO_PASS=$(get_crd '{.spec.minio.nuvolaris.password}')
-if [ -n "$MINIO_PASS" ]; then
-    echo "ENDPOINT  = http://minio.${NS}.svc.cluster.local:9000"
-    echo "ACCESS_KEY= nuvolaris"
-    echo "SECRET_KEY= $MINIO_PASS"
-else
-    echo "MinIO not enabled or not deployed (replaced by SeaweedFS)"
-fi
 
 # ── ENV format output ────────────────────────────────────────────────────────
 if [ "$ENV_FORMAT" = true ]; then

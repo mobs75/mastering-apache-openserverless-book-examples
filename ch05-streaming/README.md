@@ -13,14 +13,15 @@ Examples for the **openserverless-streamer** component.
 
 ```
 HTTP Client
-    │  POST /action/{ns}/{action}
+    │  POST https://stream.<openserverless-domain>/action/{ns}/{action}
     ▼
-openserverless-streamer (port 8181)
-    │  1. Invokes OW action via REST API
-    │  2. Opens TCP socket on STREAMER_ADDR
+openserverless-streamer (StatefulSet openserverless-streamer-api, port 8080)
+    │  1. Opens a TCP socket on a free port of its pod (STREAMER_ADDR)
+    │  2. Invokes the action via the OpenWhisk REST API, passing
+    │     the socket address as the STREAM_HOST and STREAM_PORT parameters
     ▼
 OpenWhisk Action Runtime
-    │  Connects to STREAMER_ADDR
+    │  Connects to STREAM_HOST:STREAM_PORT
     │  Writes tokens to socket
     ▼
 openserverless-streamer
@@ -28,6 +29,10 @@ openserverless-streamer
     ▼
 HTTP Client receives chunked stream
 ```
+
+The streamer is installed by `ops setup openserverless streamer deploy` in the
+`openserverless` namespace and is exposed through the ingress at
+`stream.<openserverless-domain>`.
 
 ## Streamer endpoints
 
@@ -38,13 +43,17 @@ HTTP Client receives chunked stream
 | POST /web/{ns}/{action} | None | Invoke web action (no auth) |
 | POST /web/{ns}/{pkg}/{action} | None | Invoke web action in package |
 
-## Environment variables
+## Streamer environment variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| OW_APIHOST | Yes | — | OpenWhisk API host |
-| STREAMER_ADDR | Yes | — | address:port for action TCP socket |
-| HTTP_SERVER_PORT | No | 8181 | Streamer HTTP listen port |
+| Variable | Description |
+|----------|-------------|
+| OW_APIHOST | OpenWhisk API host |
+| STREAMER_ADDR | IP address of the streamer pod (from `status.podIP`), used for the action sockets |
+| HTTP_SERVER_PORT | Streamer HTTP listen port (8080 in the deployment; 80 is the default in the code) |
+| CORS_ENABLED | Enables CORS headers on the HTTP responses |
+
+The action does not read these variables: it receives `STREAM_HOST` and
+`STREAM_PORT` as invocation parameters.
 
 ## Deploy and test
 
@@ -52,9 +61,9 @@ HTTP Client receives chunked stream
 # Deploy
 ops action create streaming-hello streaming_action.py --kind python:3.11
 
-# Invoke via streamer
+# Invoke via streamer (example user: devel)
 TOKEN=$(grep AUTH ~/.wskprops | cut -d= -f2)
-curl -X POST http://localhost:8181/action/nuvolaris/streaming-hello \
+curl -N -X POST https://stream.<openserverless-domain>/action/devel/streaming-hello \
      -H "Authorization: Bearer $TOKEN" \
      -d '{"prompt": "Hello streaming world"}'
 ```

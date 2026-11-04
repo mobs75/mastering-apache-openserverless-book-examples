@@ -8,14 +8,14 @@
 # Usage:
 #   source cluster-utils.sh     # load all functions in current shell
 #   mk <command>                # run kubectl on k8s-master via Multipass
-#   ows-pods                    # show all nuvolaris pods
+#   ows-pods                    # show all openserverless pods
 #   ows-logs <pod>              # tail logs of a pod
 #   ows-restart <component>     # restart a component
 #   ows-enable <component>      # enable a component in Whisk CRD
 #   ows-disable <component>     # disable a component in Whisk CRD
 #   ows-status                  # full cluster status
 
-NS="nuvolaris"
+NS="openserverless"
 KUBECONFIG_PATH="/var/snap/microk8s/current/credentials/client.config"
 
 # ── Multipass helper ─────────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ ows-logs() {
 
 ows-logs-operator() {
     echo "=== Operator logs (last 5 min) ==="
-    kubectl logs -n "$NS" nuvolaris-operator-0 --since=5m
+    kubectl logs -n "$NS" openserverless-operator-0 --since=5m
 }
 
 ows-logs-controller() {
@@ -58,7 +58,8 @@ ows-enable() {
     local component="${1:-}"
     if [ -z "$component" ]; then
         echo "Usage: ows-enable <component>"
-        echo "Components: redis mongodb postgres seaweedfs minio kafka cron static"
+        echo "Components: redis mongodb postgres seaweedfs milvus etcd cron static monitoring"
+        echo "(alternatively: ops config enable --<component> && ops update apply)"
         return 1
     fi
     echo "Enabling $component..."
@@ -92,13 +93,13 @@ ows-restart() {
         return 1
     fi
     case "$component" in
-        operator)   kubectl rollout restart statefulset nuvolaris-operator -n "$NS" ;;
+        operator)   kubectl rollout restart statefulset openserverless-operator -n "$NS" ;;
         controller) kubectl rollout restart statefulset controller -n "$NS" ;;
         redis)      kubectl rollout restart statefulset redis -n "$NS" ;;
         couchdb)    kubectl rollout restart statefulset couchdb -n "$NS" ;;
         kafka)      kubectl rollout restart statefulset kafka-0 -n "$NS" 2>/dev/null || \
                     kubectl delete pod kafka-0 -n "$NS" ;;
-        postgres)   kubectl rollout restart statefulset nuvolaris-postgresql -n "$NS" ;;
+        postgres)   kubectl rollout restart statefulset openserverless-postgres-1 -n "$NS" ;;
         *)          echo "Unknown component: $component" ; return 1 ;;
     esac
     echo "Restarting $component... watch with: kubectl get pods -n $NS -w"
@@ -109,7 +110,8 @@ ows-check() {
     echo "=== Service connectivity ==="
 
     echo -n "Controller API:  "
-    curl -s http://localhost:30233/api/v1 | python3 -c \
+    APIHOST=$(kubectl get cm/config -n "$NS" -o jsonpath='{.metadata.annotations.apihost}')
+    curl -s "$APIHOST/api/v1" | python3 -c \
         "import sys,json; d=json.load(sys.stdin); print('OK — v' + d.get('api_version','?'))" \
         2>/dev/null || echo "FAIL"
 
@@ -123,7 +125,7 @@ ows-check() {
     kubectl exec -n "$NS" redis-0 -- redis-cli ping 2>/dev/null || echo "FAIL"
 
     echo -n "PostgreSQL:      "
-    kubectl get pod -n "$NS" -l app=nuvolaris-postgresql \
+    kubectl get pod -n "$NS" -l app=openserverless-postgres \
         --no-headers 2>/dev/null | awk '{print "OK — " $1 " " $3}' || echo "not deployed"
 
     echo -n "SeaweedFS:       "
@@ -154,7 +156,7 @@ ows-whoami() {
     fi
     echo ""
     echo "ops config:"
-    ops config get 2>/dev/null || echo "ops not configured"
+    ops config status 2>/dev/null || echo "ops not configured"
 }
 
 ows-action-test() {

@@ -1,9 +1,14 @@
 #!/bin/bash
-# setup-microk8s-multipass.sh — Deploy OpenServerless on MicroK8s + Multipass
+# setup-microk8s-multipass.sh — Deploy Apache OpenServerless on MicroK8s + Multipass
 # Chapter 9 — Mastering Apache OpenServerless
 #
-# Tested on: Hetzner VPS, Ubuntu 22.04, ops v0.1.0
-# Architecture: 1 master + 3 worker nodes via Multipass VMs
+# Tested with: Apache OpenServerless 0.9.0-incubating, ops 0.9.0
+# Architecture: 1 master + 3 worker nodes via Multipass VMs (MicroK8s cluster
+# already created, for example with the Pulumi program described in Chapter 9)
+#
+# The script uses the official "cluster" deployment path (ops setup cluster),
+# which deploys the platform on an existing Kubernetes cluster, then installs
+# the streamer, the system API and Tika, logs in and creates the default user.
 #
 # Usage:
 #   chmod +x setup-microk8s-multipass.sh
@@ -11,62 +16,41 @@
 set -euo pipefail
 
 MASTER_VM="k8s-master"
-KUBECONFIG_PATH="/var/snap/microk8s/current/credentials/client.config"
-NS="nuvolaris"
+NS="openserverless"
+APIHOST="${APIHOST:-auto}"     # or an explicit hostname, e.g. my-platform.example.com
+OPS='$HOME/go/bin/ops'         # where "go install" puts the ops binary on k8s-master
 
-# Helper: run command on k8s-master with KUBECONFIG set
-mk() {
-    multipass exec "$MASTER_VM" -- bash -c \
-        "export KUBECONFIG=$KUBECONFIG_PATH && $*"
+# Helper: run a command on k8s-master
+vm() {
+    multipass exec "$MASTER_VM" -- bash -c "$*"
 }
 
-echo "=== Step 1: Install ops CLI on k8s-master ==="
-multipass exec "$MASTER_VM" -- bash -c \
-    "curl -sL https://raw.githubusercontent.com/apache/openserverless/main/install.sh | bash && \
-     echo 'export PATH=\$HOME/.local/bin:\$PATH' >> ~/.bashrc"
+echo "=== Step 1: Install the ops CLI on k8s-master (from the official sources) ==="
+# See https://openserverless.apache.org/docs/installation/install-cli/
+vm "command -v go >/dev/null || sudo snap install go --classic"
+vm "go install github.com/apache/openserverless-cli/cmd/ops@0.9.0"
+vm "grep -q 'go/bin' ~/.bashrc || echo 'export PATH=\$PATH:\$HOME/go/bin' >> ~/.bashrc"
+# First run: downloads the tasks and the prerequisite tools (kubectl, helm, ...)
+vm "$OPS -info"
 
-echo "=== Step 2: Configure API host ==="
-multipass exec "$MASTER_VM" -- bash -c \
-    "~/.local/bin/ops config apihost http://localhost:30233"
+echo "=== Step 2: Point kubectl to the MicroK8s cluster ==="
+vm "mkdir -p ~/.kube && microk8s config > ~/.kube/config && chmod 600 ~/.kube/config"
+vm "$OPS debug kube info || microk8s kubectl cluster-info"
 
-echo "=== Step 3: Deploy OpenServerless (initial deploy without SeaweedFS) ==="
-multipass exec "$MASTER_VM" -- bash -c "
-export OPERATOR_COMPONENT_REDIS=true
-export OPERATOR_COMPONENT_MONGODB=true
-export OPERATOR_COMPONENT_POSTGRES=true
-export OPERATOR_COMPONENT_SEAWEEDFS=false   # Enable after initial deploy (see NOTE)
-export OPERATOR_COMPONENT_STATIC=true
-export OPERATOR_COMPONENT_CRON=true
-export OPERATOR_COMPONENT_MINIO=false
-cd ~/.ops/*/olaris/setup/kubernetes && ~/.local/bin/ops setup kubernetes deploy
-"
+echo "=== Step 3: Configure the platform ==="
+vm "$OPS config apihost $APIHOST"
+vm "$OPS config enable --redis --mongodb --postgres --seaweedfs --static --cron"
 
-echo "=== Step 4: Wait for core pods ==="
-mk "microk8s kubectl wait --for=condition=ready pod \
-    -l app=controller -n $NS --timeout=300s" || echo "WARN: timeout waiting for controller"
+echo "=== Step 4: Deploy Apache OpenServerless on the existing cluster ==="
+vm "$OPS setup cluster"
 
-echo "=== Step 5: Retrieve credentials from CouchDB ==="
-COUCH_PASS=$(multipass exec "$MASTER_VM" -- bash -c \
-    "export KUBECONFIG=$KUBECONFIG_PATH && \
-     microk8s kubectl exec -n $NS couchdb-0 -- env | grep COUCHDB_PASSWORD | cut -d= -f2")
+echo "=== Step 5: Verify ==="
+vm "$OPS setup status"
+vm "microk8s kubectl -n $NS get pods"
 
-echo "=== Step 6: Configure .wskprops ==="
-multipass exec "$MASTER_VM" -- bash -c "
-COUCH_PASS=$(mk "microk8s kubectl exec -n $NS couchdb-0 -- env | grep COUCHDB_PASSWORD | cut -d= -f2" 2>/dev/null || echo '')
-AUTH=\$(microk8s kubectl exec -n $NS couchdb-0 -- \
-    curl -s http://whisk_admin:\${COUCH_PASS}@localhost:5984/${NS}_subjects/nuvolaris \
-    | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[\"uuid\"]+\":\"+d[\"key\"])')
-cat > ~/.wskprops << WSKEOF
-APIHOST=http://localhost:30233
-AUTH=\$AUTH
-NAMESPACE=nuvolaris
-WSKEOF
-echo '.wskprops written'
-"
-
-echo "=== Done! Verify with: ==="
-echo "  multipass exec k8s-master -- ~/.local/bin/ops action list"
 echo ""
-echo "NOTE: To enable SeaweedFS after initial deploy, run:"
-echo "  multipass exec k8s-master -- microk8s kubectl patch wsk/controller -n $NS --type=merge \\"
-echo "    -p '{\"spec\":{\"components\":{\"minio\":false,\"seaweedfs\":true}}}'"
+echo "=== Done! ==="
+echo "ops setup cluster has already logged in (credentials in ~/.wskprops on k8s-master)."
+echo "Verify with:"
+echo "  multipass exec $MASTER_VM -- bash -lc 'ops action list'"
+echo "  multipass exec $MASTER_VM -- bash -lc 'ops invoke hello/hello name=World'"

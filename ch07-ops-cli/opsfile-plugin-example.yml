@@ -1,0 +1,52 @@
+# opsfile-plugin-example.yml — Example opsfile.yml for a plugin
+# Chapter 7 — Mastering Apache OpenServerless
+#
+# Every plugin provides an opsfile.yml that the ops CLI discovers
+# automatically by scanning plugins/*/opsfile.yml.
+# This makes every plugin accessible as:
+#   ops <plugin> install / deploy / status / remove
+#
+# Note: ops CLI scans plugins/*/opsfile.yml and mounts commands dynamically.
+# No manual registration needed — just placing opsfile.yml in the plugin dir
+# is sufficient.
+version: '3'
+
+tasks:
+  install:
+    desc: "Install the plugin operator (CRD + Deployment)"
+    cmds:
+      - kubectl apply -f {{.PLUGIN_DIR}}/crd.yaml
+      - kubectl apply -f {{.PLUGIN_DIR}}/operator-deployment.yaml
+      - kubectl wait --for=condition=available deployment/plugin-operator
+          -n {{.NAMESPACE | default "openserverless"}} --timeout=120s
+
+  deploy:
+    desc: "Deploy a plugin instance"
+    vars:
+      NAME: '{{.NAME | default "my-instance"}}'
+      NS:   '{{.NAMESPACE | default "openserverless"}}'
+    cmds:
+      - |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: example.openserverless.org/v1
+        kind: Example
+        metadata:
+          name: {{.NAME}}
+          namespace: {{.NS}}
+        spec:
+          replicas: {{.REPLICAS | default 1}}
+          storage: "{{.STORAGE | default "1Gi"}}"
+        EOF
+
+  status:
+    desc: "Show plugin instance status"
+    cmds:
+      - kubectl get examples -n {{.NAMESPACE | default "openserverless"}}
+      - kubectl get pods -n {{.NAMESPACE | default "openserverless"}}
+          -l managed-by=openserverless-operator
+
+  remove:
+    desc: "Remove a plugin instance (OwnerReferences handle GC of child resources)"
+    cmds:
+      - kubectl delete example {{.NAME | default "my-instance"}}
+          -n {{.NAMESPACE | default "openserverless"}} --ignore-not-found

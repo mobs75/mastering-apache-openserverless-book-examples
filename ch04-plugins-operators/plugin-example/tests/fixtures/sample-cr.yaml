@@ -1,9 +1,9 @@
 # Sample Custom Resource for testing — Chapter 4
-apiVersion: example.nuvolaris.org/v1
+apiVersion: example.openserverless.org/v1
 kind: Example
 metadata:
   name: my-example
-  namespace: nuvolaris
+  namespace: openserverless
 spec:
   replicas: 1
   version: "1.0.0"

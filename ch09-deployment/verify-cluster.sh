@@ -4,7 +4,8 @@
 set -euo pipefail
 
 KUBECONFIG_PATH="/var/snap/microk8s/current/credentials/client.config"
-NS="nuvolaris"
+NS="openserverless"
+OPS='$HOME/go/bin/ops'   # ops installed with "go install" on k8s-master
 
 mk() { multipass exec k8s-master -- bash -c "export KUBECONFIG=$KUBECONFIG_PATH && $*"; }
 
@@ -21,8 +22,9 @@ mk "microk8s kubectl get wsk/controller -n $NS -o yaml | grep -A 20 'components:
 
 echo ""
 echo "=== Controller API ping ==="
-mk "curl -s http://localhost:30233/api/v1 | python3 -m json.tool" \
-    || echo "WARN: controller not responding on port 30233"
+mk "APIHOST=\$(microk8s kubectl get cm/config -n $NS -o jsonpath='{.metadata.annotations.apihost}') && \
+    curl -s \$APIHOST/api/v1 | python3 -m json.tool" \
+    || echo "WARN: controller not responding on the configured API host"
 
 echo ""
 echo "=== Hello World smoke test ==="
@@ -31,17 +33,17 @@ def main(args):
     return {'body': 'Hello ' + args.get('name', 'OpenServerless')}
 PYEOF"
 
-mk "~/.local/bin/ops action create verify-hello /tmp/hello-verify.py \
+mk "$OPS action create verify-hello /tmp/hello-verify.py \
     --kind python:3.11 2>/dev/null || \
-    ~/.local/bin/ops action update verify-hello /tmp/hello-verify.py \
+    $OPS action update verify-hello /tmp/hello-verify.py \
     --kind python:3.11"
 
-RESULT=$(mk "~/.local/bin/ops action invoke verify-hello \
+RESULT=$(mk "$OPS action invoke verify-hello \
     --result --param name World 2>/dev/null")
 echo "Result: $RESULT"
 
 # Cleanup
-mk "~/.local/bin/ops action delete verify-hello 2>/dev/null || true"
+mk "$OPS action delete verify-hello 2>/dev/null || true"
 
 echo ""
 echo "=== Service connectivity ==="

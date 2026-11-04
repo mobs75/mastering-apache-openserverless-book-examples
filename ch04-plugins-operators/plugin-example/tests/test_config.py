@@ -8,9 +8,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from config import load_config
 
 def test_load_config_defaults():
-    result = load_config({}, "test-example", "nuvolaris")
+    result = load_config({}, "test-example", "openserverless")
     assert result["name"] == "test-example"
-    assert result["namespace"] == "nuvolaris"
+    assert result["namespace"] == "openserverless"
     assert result["replicas"] == 1
     assert result["version"] == "1.0.0"
     assert result["storage_size"] == "1Gi"
