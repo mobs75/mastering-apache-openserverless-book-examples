@@ -1,37 +1,39 @@
 # Chapter 10 — OpenServerless Runtimes
 ## Code Listings
 
-> Source: Apache OpenServerless codebase — `runtimes/` and related paths.
-> These are the real listings used in Chapter 10 of *Apache OpenServerless: The Complete Guide* (Apress).
+> These are the listings used in Chapter 10 of *Mastering Apache OpenServerless* (Apress),
+> aligned with the Apache OpenServerless 0.9.0-incubating release.
 
 ---
 
-### Listing 10-1. Common builder image — compiles the ActionLoop Proxy binary
-
-Source: `runtimes/runtime/common/common1.17.1/Dockerfile`
+### Listing 10-1. The openserverless-runtime-common builder image compiles the proxy binary (Dockerfile in the root of the runtimes repository)
 
 ```dockerfile
 FROM golang:1.21
 ENV HOME=/tmp
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY proxy.go ./
+COPY openwhisk/ ./openwhisk/
+RUN CGO_ENABLED=0 go build -o /go/bin/proxy
+
 USER nobody
-RUN CGO_ENABLED=0 go install \
-    github.com/apache/openserverless-runtimes@common1.17.1
-RUN mv /go/bin/openserverless-runtimes /go/bin/proxy
+COPY DISCLAIMER LICENSE NOTICE /
 ENTRYPOINT [ "/go/bin/proxy" ]
 ```
 
 ---
 
-### Listing 10-2. Node.js v21 runtime Dockerfile — multi-stage build pattern
-
-Source: `runtimes/runtime/nodejs/v21/Dockerfile`
+### Listing 10-2. The Node.js v22 runtime Dockerfile, illustrating the multi-stage build pattern (runtime/nodejs/v22/Dockerfile)
 
 ```dockerfile
 ARG COMMON=missing:missing
 FROM ${COMMON} AS builder
 
-FROM node:21.6.2-bookworm
-ENV OW_EXECUTION_ENV=apacheopenserverless/nodejs-21.6.2
+FROM node:22.23.2-bookworm
+ENV OW_EXECUTION_ENV=apacheopenserverless/nodejs-22.23.2
 COPY --from=builder /go/bin/proxy /bin/proxy
 
 ENV OW_COMPILER=/bin/compile
@@ -43,9 +45,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package.json /
-RUN npm install && npm cache clean --force
+RUN npm config set fetch-retry-maxtimeout 60000 -g
+RUN cd / && npm install && npm cache clean --force
 
-RUN mkdir -p /app/action && chmod -R 0775 /app && chown -R nobody:root /app
+RUN mkdir -p /app/action && chmod -R 0775 /app && \
+    chown -R nobody:root /app
 ENV HOME=/app
 WORKDIR /app
 COPY bin/compile /bin/compile
@@ -53,14 +57,13 @@ COPY lib/launcher.js /lib/launcher.js
 
 EXPOSE 8080
 USER nobody
+COPY DISCLAIMER LICENSE NOTICE /
 ENTRYPOINT ["/bin/proxy"]
 ```
 
 ---
 
-### Listing 10-3. The `ActionProxy` struct definition
-
-Source: `runtimes/openwhisk/actionProxy.go`
+### Listing 10-3. The ActionProxy struct definition in openwhisk/actionProxy.go
 
 ```go
 type ActionProxy struct {
@@ -80,9 +83,7 @@ type ActionProxy struct {
 
 ---
 
-### Listing 10-4. Proxy mode selection in `proxy.go` `main()`
-
-Source: `runtimes/proxy.go`
+### Listing 10-4. Mode selection in proxy.go main() — three mutually exclusive operating modes
 
 ```go
 proxyMode := openwhisk.ProxyModeNone
@@ -109,9 +110,7 @@ ap := openwhisk.NewActionProxy(
 
 ---
 
-### Listing 10-5. `Executor.Interact()` — writes invocation payload to stdin, reads result from fd 3
-
-Source: `runtimes/openwhisk/executor.go`
+### Listing 10-5. The Executor.Interact() method: writing the invocation payload to stdin and reading the result from fd 3
 
 ```go
 func (proc *Executor) Interact(in []byte) ([]byte, error) {
@@ -149,9 +148,7 @@ func (proc *Executor) Interact(in []byte) ([]byte, error) {
 
 ---
 
-### Listing 10-6. `initBodyRequest` struct and `doInit()` in `openwhisk/initHandler.go`
-
-Source: `runtimes/openwhisk/initHandler.go`
+### Listing 10-6. The initBodyRequest struct and the start of doInit() in openwhisk/initHandler.go
 
 ```go
 type initBodyRequest struct {
@@ -189,9 +186,7 @@ func (ap *ActionProxy) doInit(request initRequest, w http.ResponseWriter) error 
 
 ---
 
-### Listing 10-7. Waiting for the action acknowledgement in `Executor.Start()`
-
-Source: `runtimes/openwhisk/executor.go`
+### Listing 10-7. Waiting for the action acknowledgement in Executor.Start() — openwhisk/executor.go
 
 ```go
 // wait for acknowledgement
@@ -221,9 +216,7 @@ case <-proc.exited:
 
 ---
 
-### Listing 10-8. Python ActionLoop run loop in `lib/launcher.py`
-
-Source: `runtimes/runtime/python/v3.12/lib/launcher.py`
+### Listing 10-8. The Python ActionLoop run loop in lib/launcher.py — every language launcher implements this same pattern
 
 ```python
 out = fdopen(3, "wb")
@@ -261,20 +254,17 @@ while True:
 
 ---
 
-### Listing 10-9. Python v3.12 runtime Dockerfile
-
-Source: `runtimes/runtime/python/v3.12/Dockerfile`
+### Listing 10-9. The Python v3.12 runtime Dockerfile — multi-stage build, proxy binary copy, and environment configuration (runtime/python/v3.12/Dockerfile)
 
 ```dockerfile
 ARG COMMON=missing:missing
 FROM ${COMMON} AS builder
 
-FROM python:3.12.2-bookworm
-ENV OW_EXECUTION_ENV=apacheopenserverless/runtime-python-v3.12.2
+FROM python:3.12.14-slim-bookworm
+ENV OW_EXECUTION_ENV=apacheopenserverless/runtime-python-v3.12.14
 COPY --from=builder /go/bin/proxy /bin/proxy
 
-RUN apt-get update && apt-get install -y \
-    python3-lxml python3-psycopg2 zip xpdf \
+RUN apt-get update && apt-get install -y python3-lxml zip \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt requirements.txt
@@ -295,12 +285,13 @@ ENV HOME=/tmp
 WORKDIR /action
 RUN chown nobody:root /action ; chmod 0775 /action
 USER nobody
+COPY DISCLAIMER LICENSE NOTICE /
 ENTRYPOINT ["/bin/proxy"]
 ```
 
 ---
 
-### Listing 10-10. Minimal Go action function
+### Listing 10-10. A minimal Go action function — the compile script wraps this into a complete Go program and compiles it
 
 ```go
 package main
@@ -315,14 +306,13 @@ func Main(event map[string]interface{}) map[string]interface{} {
     if !ok { name = "world" }
     msg := fmt.Sprintf("Hello, %s!", name)
     return map[string]interface{}{"message": msg}
+
 }
 ```
 
 ---
 
-### Listing 10-11. PHP v8.3 Dockerfile — extension installation, Composer, proxy setup
-
-Source: `runtimes/runtime/php/v8.3/Dockerfile`
+### Listing 10-11. Key excerpt from the PHP v8.3 Dockerfile — extension installation, Composer, and proxy setup (experimental/php/v8.3/Dockerfile)
 
 ```dockerfile
 ARG COMMON=missing:missing
@@ -357,18 +347,16 @@ ENTRYPOINT ["/bin/proxy", "-debug"]
 
 ---
 
-### Listing 10-12. `nodejs:21` entry in `runtimes.json` — full kind descriptor with `stemCells`
-
-Source: `runtimes/runtimes.json`
+### Listing 10-12. The nodejs:22 entry in runtimes.json, showing the full kind descriptor including stemCells reactive pre-warming
 
 ```json
 {
-    "kind": "nodejs:21",
+    "kind": "nodejs:22",
     "default": true,
     "image": {
-        "prefix": "apache",
+        "prefix": "docker.io/apache",
         "name": "openserverless-runtime-nodejs",
-        "tag": "v21-cf0e986"
+        "tag": "v22-26i22h40-snapshot"
     },
     "deprecated": false,
     "attached": {
@@ -393,95 +381,68 @@ Source: `runtimes/runtimes.json`
 
 ---
 
-### Listing 10-13. `python:3` entry in `runtimes.json.tpl` — `envsubst`-style variable placeholders
-
-Source: `runtimes/runtimes.json.tpl`
+### Listing 10-13. The merge.json file of the Node.js v22 runtime — the default flag and the stemCells configuration are merged into the generated kind (runtime/nodejs/v22/merge.json)
 
 ```json
 {
-    "kind": "python:3",
     "default": true,
-    "image": {
-        "prefix": "$OPS_RUNTIME_PREFIX",
-        "name": "openserverless-runtime-python",
-        "tag": "$OPS_RUNTIME_TAG_PYTHON_V3_12"
-    },
-    "deprecated": false,
-    "attached": {
-        "attachmentName": "codefile",
-        "attachmentType": "text/plain"
-    },
-    "stemCells": [{
-        "initialCount": 1,
-        "memory": "256 MB",
-        "reactive": {
-            "minCount": 1, "maxCount": 4,
-            "ttl": "2 minutes",
-            "threshold": 1, "increment": 1
+    "stemCells": [
+        {
+            "initialCount": 1,
+            "memory": "256 MB",
+            "reactive": {
+                "minCount": 1,
+                "maxCount": 4,
+                "ttl": "2 minutes",
+                "threshold": 1,
+                "increment": 1
+            }
         }
-    }]
+    ]
 }
 ```
 
 ---
 
-### Listing 10-14. `runtimes.env` — generated by `task render-runtimes`
-
-```bash
-OPS_RUNTIME_PREFIX=apache
-OPS_RUNTIME_TAG_GO_V1_20=v1.20-cf0e986
-OPS_RUNTIME_TAG_GO_V1_21=v1.21-cf0e986
-OPS_RUNTIME_TAG_GO_V1_22=v1.22-cf0e986
-OPS_RUNTIME_TAG_GO_V1_22PROXY=v1.22proxy-cf0e986
-OPS_RUNTIME_TAG_NODEJS_V18=v18-cf0e986
-OPS_RUNTIME_TAG_NODEJS_V20=v20-cf0e986
-OPS_RUNTIME_TAG_NODEJS_V21=v21-cf0e986
-OPS_RUNTIME_TAG_PYTHON_V3_11=v3.11-cf0e986
-OPS_RUNTIME_TAG_PYTHON_V3_12=v3.12-cf0e986
-OPS_RUNTIME_TAG_PYTHON_V3_13=v3.13-cf0e986
-OPS_RUNTIME_TAG_JAVA_V8=v8-cf0e986
-OPS_RUNTIME_TAG_JAVA_V11=v11-cf0e986
-OPS_RUNTIME_TAG_JAVA_V17=v17-cf0e986
-OPS_RUNTIME_TAG_JAVA_V21=v21-cf0e986
-```
-
----
-
-### Listing 10-15. `generate-runtimes` task in `runtimes/Taskfile.yml`
-
-Source: `runtimes/Taskfile.yml`
+### Listing 10-14. The render-runtimes task in the runtimes Taskfile.yml and an example run
 
 ```yaml
-generate-runtimes:
+render-runtimes:
   silent: true
-  dotenv:
-    - runtimes.env
+  desc: generate a runtimes.json file with all the runtime
+        corresponding to the current TAG
   cmds:
-    - cat runtimes.json.tpl | envsubst > runtimes.json
+    - echo "creating runtimes.json"
+    - python3 runtimes.py {{.TAG}} >runtimes.json
+
+$ task tag
+Tag all_26i22h40-snapshot, you can now task build
+$ task render-runtimes
+creating runtimes.json
 ```
 
 ---
 
-### Listing 10-16. `go:1.22proxy` Dockerfile — activates `ProxyModeClient`
+### Listing 10-15. Inspecting, customizing, and applying the runtimes manifest with the ops CLI
 
-Source: `runtimes/runtime/go/v1.22proxy/Dockerfile`
+```bash
+# show the runtimes.json deployed in the cluster
+ops debug runtimes
+
+# use a customized runtimes.json instead of the default one
+ops config runtimes ./my-runtimes.json
+
+# deploy the manifest as the openwhisk-runtimes ConfigMap
+ops update runtimes
+```
+
+---
+
+### Listing 10-16. A Dockerfile for a forward proxy client runtime, built on top of the standard Go 1.26 runtime image
 
 ```dockerfile
-# Only difference from the standard go:1.22 Dockerfile:
-# this image pins to the experimental common base (common1.18.4)
-# and activates forward proxy client mode.
-FROM apache/openserverless-runtime-common:common1.18.4 AS builder
-
-FROM golang:1.22-bookworm
-ENV OW_EXECUTION_ENV=apacheopenserverless/runtime-golang-v1.22
-COPY --from=builder /go/bin/proxy /bin/proxy
-
-# ... same apt-get and ADD steps as go:1.22 ...
-
-ENV OW_COMPILER=/bin/compile
-ENV OW_LOG_INIT_ERROR=1
-ENV OW_WAIT_FOR_ACK=1
-ENV OW_ACTIVATE_PROXY_CLIENT=1   # <-- activates ProxyModeClient
-
-ENTRYPOINT [ "/bin/proxy" ]
+# Forward proxy client runtime: the standard Go runtime
+# with the client mode of the proxy switched on
+FROM apache/openserverless-runtime-go:v1.26-<tag>
+ENV OW_ACTIVATE_PROXY_CLIENT=1
 ```

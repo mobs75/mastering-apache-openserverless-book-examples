@@ -4,7 +4,9 @@ Chapter 10 — Mastering Apache OpenServerless
 
 The cron scheduler is a Kubernetes CronJob (cron-init) that runs every minute.
 It scans CouchDB for actions annotated with 'cron' and invokes them according
-to the cron expression.
+to the cron expression. It is an optional component: enable it with
+    ops config enable --cron
+    ops update apply
 
 Deploy with cron annotation:
     ops action create my-cron-job cron_action.py \
@@ -17,7 +19,7 @@ Deploy with autoexec (runs once at startup):
         -a autoexec true
 
 Verify the cron scheduler is running:
-    kubectl get cronjob cron-init -n nuvolaris
+    kubectl get cronjob cron-init -n openserverless
 
 Verify automatic invocations:
     ops activation list --limit 10

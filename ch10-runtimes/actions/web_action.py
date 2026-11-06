@@ -8,9 +8,10 @@ They receive the full HTTP request and can return structured HTTP responses.
 Deploy:
     ops action create web-hello web_action.py --kind python:3.11 --web true
 
-Access via HTTP (no auth required):
-    curl "http://localhost:30233/api/v1/web/nuvolaris/default/web-hello?name=Alessio"
-    curl "http://localhost:30233/api/v1/web/nuvolaris/default/web-hello" \
+Access via HTTP (no auth required; <apihost> is the API host you logged in to,
+and devel is the example user and namespace used in the book):
+    curl "<apihost>/api/v1/web/devel/default/web-hello?name=Alessio"
+    curl "<apihost>/api/v1/web/devel/default/web-hello" \
          -X POST -H "Content-Type: application/json" \
          -d '{"name": "Alessio"}'
 

@@ -14,9 +14,10 @@ Invoke:
     ops action invoke hello --result
     ops action invoke hello --result --param name Alessio
 
-Web action (HTTP endpoint, no auth):
+Web action (HTTP endpoint, no auth; <apihost> is the API host you logged in to,
+and devel is the example user and namespace used in the book):
     ops action update hello --web true
-    curl http://localhost:30233/api/v1/web/nuvolaris/default/hello?name=Alessio
+    curl "<apihost>/api/v1/web/devel/default/hello?name=Alessio"
 """
 
 

@@ -1,8 +1,13 @@
-# Chapter 12 — Security in OpenServerless — Code Listings
-> Source: Apache OpenServerless codebase — security, authentication, and operator RBAC paths.
-> These are the real listings used in Chapter 12 of *Apache OpenServerless: The Complete Guide* (Apress).
+# Chapter 12 — Security in OpenServerless
+## Code Listings
+
+> These are the listings used in Chapter 12 of *Mastering Apache OpenServerless* (Apress),
+> aligned with the Apache OpenServerless 0.9.0-incubating release.
+
 ---
+
 ### Listing 12-1. openwhisk_authorize.py — the core OpenWhisk token validation path
+
 ```python
 # admin-api/openserverless/common/openwhisk_authorize.py (excerpts)
 class OpenwhiskAuthorize:
@@ -32,8 +37,11 @@ class OpenwhiskAuthorize:
             return user_data
         raise AuthorizationError('Could not retrieve user metadata.')
 ```
+
 ---
+
 ### Listing 12-2. ow_authorize.py — decorator that gates an endpoint on OW namespace credentials
+
 ```python
 # admin-api/openserverless/security/ow_authorize.py
 def ow_authorize(pass_user_data=False, kwargs_field_name='ow-auth-user'):
@@ -61,8 +69,11 @@ def ow_authorize(pass_user_data=False, kwargs_field_name='ow-auth-user'):
         return decorated
     return decorator
 ```
+
 ---
+
 ### Listing 12-3. auth_service.py and bcrypt_util.py — password authentication and hashing
+
 ```python
 # admin-api/openserverless/impl/auth/auth_service.py (excerpts)
 import openserverless.couchdb.bcrypt_util as bu
@@ -100,15 +111,18 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
 ```
+
 ---
+
 ### Listing 12-4. login.go — the CLI login flow, schema enforcement, and config.json persistence
+
 ```go
 # cli/auth/login.go (excerpts)
 const whiskLoginPath = "/api/v1/web/whisk-system/nuv/login"
 
 func LoginCmd() (*LoginResult, error) {
     // ... flag parsing ...
-    apihost = ensureSchema(apihost)  // forces https:// for non-localhost
+    apihost = ensureSchema(apihost)  // adds https:// if no scheme
     url := apihost + whiskLoginPath
 
     password := os.Getenv("OPS_PASSWORD")
@@ -126,82 +140,103 @@ func LoginCmd() (*LoginResult, error) {
 }
 
 func ensureSchema(apihost string) string {
-    if apihost == "localhost" {
-        return "http://" + apihost
+    if !strings.HasPrefix(apihost, "http://") &&
+        !strings.HasPrefix(apihost, "https://") {
+        if apihost == "localhost" {
+            apihost = "http://" + apihost
+        } else {
+            apihost = "https://" + apihost // TLS by default
+        }
     }
-    return "https://" + apihost  // always TLS for remote hosts
+    return apihost
 }
 ```
+
 ---
+
 ### Listing 12-5. user-crd.yaml — the WhiskUser CRD template with all optional service credentials
+
 ```yaml
-# olaris/admin/user-crd.yaml template
-apiVersion: nuvolaris.org/v1
+# admin/user-crd.yaml in the ops task bundle
+apiVersion: openserverless.org/v1
 kind: WhiskUser
 metadata:
   name: ${USERNAME}
-  namespace: nuvolaris
+  namespace: openserverless
 spec:
-  email:     ${EMAIL}
-  password:  ${PASSWORD}        # bcrypt-hashed at operator level
+  email: ${EMAIL}
+  password: ${PASSWORD}         # hashed by the operator in CouchDB
   namespace: ${USERNAME}        # dedicated OW namespace
-  auth:      ${SECRET_USER_AUTH} # uuid4:random64 OW token
+  auth: ${SECRET_USER_AUTH}     # uuid4:random64 OW token
   redis:
-    enabled:  ${REDIS_ENABLED}
-    prefix:   ${USERNAME}
+    enabled: ${REDIS_ENABLED}
+    prefix: ${USERNAME}
     password: ${USER_SECRET_REDIS}
   mongodb:
-    enabled:  ${MONGODB_ENABLED}
+    enabled: ${MONGODB_ENABLED}
     database: ${USERNAME}
     password: ${USER_SECRET_MONGODB}
   postgres:
-    enabled:  ${POSTGRES_ENABLED}
+    enabled: ${POSTGRES_ENABLED}
     database: ${USERNAME}
     password: ${USER_SECRET_POSTGRES}
   object-storage:
-    password: ${USER_SECRET_MINIO}
-    quota:    ${MINIO_STORAGE_QUOTA:-auto}
-    data:  { enabled: ${MINIO_DATA_ENABLED},   bucket: ${USERNAME}-data }
-    route: { enabled: ${MINIO_STATIC_ENABLED}, bucket: ${USERNAME}-web  }
+    password: ${USER_SECRET_SEAWEEDFS}
+    quota: "${OBJECT_STORAGE_QUOTA:-auto}"
+    data:
+      enabled: ${OBJECT_STORAGE_DATA_ENABLED}
+      bucket: ${USERNAME}-data
+    route:
+      enabled: ${OBJECT_STORAGE_STATIC_ENABLED}
+      bucket: ${USERNAME}-web
   milvus:
-    enabled:  ${MILVUS_ENABLED}
+    enabled: ${MILVUS_ENABLED}
     database: ${USERNAME}
     password: ${USER_SECRET_MILVUS}
 ```
+
 ---
+
 ### Listing 12-6. opsfile.yml — system secret generation and per-user secret generation tasks
+
 ```yaml
-# olaris/util/opsfile.yml â task: secrets (system-level generation)
+# util/opsfile.yml — task: secrets (system-level generation)
 secrets:
   cmds:
-    - config SECRET_OPENWHISK_SYSTEM='$(random --uuid):$(random --str 64)'
-    - config SECRET_OPENWHISK_NUVOLARIS='$(random --uuid):$(random --str 64)'
-    - config SECRET_COUCHDB_ADMIN='$(random --str 12)'
-    - config SECRET_COUCHDB_CONTROLLER='$(random --str 12)'
-    - config SECRET_COUCHDB_INVOKER='$(random --str 12)'
-    - config SECRET_REDIS_DEFAULT='$(random --str 12)'
-    - config SECRET_REDIS_NUVOLARIS='$(random --str 12)'
-    - config SECRET_MONGODB_ADMIN='$(random --str 12)'
-    - config SECRET_MINIO_ADMIN='$(random --str 40)'
-    - config SECRET_MINIO_NUVOLARIS='$(random --str 40)'
-    - config SECRET_POSTGRES_ADMIN='$(random --str 12)'
-    - config SECRET_ETCD_ROOT='$(random --str 12)'
-    - config SECRET_MILVUS_ROOT='$(random --str 12)'
-    - config SECRET_NUVOLARIS_METADATA='$(random --str 12)'
+  # OWKEY below stands for "$(random --uuid):$(random --str 64)"
+  - config SECRET_OPENWHISK_SYSTEM=OWKEY
+           SECRET_OPENWHISK_OPENSERVERLESS=OWKEY
+  - config SECRET_COUCHDB_ADMIN="$(random --str 12)"
+           SECRET_COUCHDB_CONTROLLER="$(random --str 12)"
+           SECRET_COUCHDB_INVOKER="$(random --str 12)"
+  - config SECRET_REDIS_DEFAULT=... SECRET_REDIS_OPENSERVERLESS=...
+  - config SECRET_MONGODB_ADMIN=... SECRET_MONGODB_OPENSERVERLESS=...
+  - config SECRET_POSTGRES_ADMIN=... SECRET_POSTGRES_REPLICA=...
+           SECRET_POSTGRES_OPENSERVERLESS=...
+  - config SECRET_ETCD_ROOT=... SECRET_MILVUS_ROOT=...
+           SECRET_MILVUS_S3=... SECRET_MILVUS_OPENSERVERLESS=...
+  - config SECRET_OPENSERVERLESS_METADATA="$(random --str 12)"
+  - config SECRET_SEAWEEDFS_OPENSERVERLESS="$(random --str 12)"
+  # every ... above is "$(random --str 12)"
 
 # task: user-secrets (per-user generation inside ops admin adduser)
 user-secrets:
   cmds:
-    - config '${USR}_SECRET_OPENWHISK'='$(random --uuid):$(random --str 64)'
-    - config '${USR}_SECRET_REDIS'='$(random --str 12)'
-    - config '${USR}_SECRET_MONGODB'='$(random --str 12)'
-    - config '${USR}_SECRET_MINIO'='$(random --str 40)'
-    - config '${USR}_SECRET_POSTGRES'='$(random --str 12)'
+  - config "${USR}_SECRET_OPENWHISK"=OWKEY
+  - config "${USR}_SECRET_COUCHDB"="$(random --str 12)"
+  - config "${USR}_SECRET_REDIS"="$(random --str 12)"
+  - config "${USR}_SECRET_MONGODB"="$(random --str 12)"
+  - config "${USR}_SECRET_SEAWEEDFS"="$(random --str 40)"
+  - config "${USR}_SECRET_POSTGRES"="$(random --str 12)"
+  - config "${USR}_SECRET_MILVUS"="$(random --str 12)"
 ```
+
 ---
+
 ### Listing 12-7. secrets.lib.ts and secrets/__main__.py — the env-secrets add/remove/list pipeline
-```typescript
-# olaris/env/secrets/src/secrets.lib.ts (requestSecrets excerpt)
+
+```
+# env/secrets/src/secrets.lib.ts (ops task bundle, excerpt)
 public static async requestSecrets(
     operation: string,
     username: string,
@@ -221,7 +256,7 @@ public static async requestSecrets(
     return response.json();
 }
 
-# olaris-op/actions/secrets/__main__.py (merge logic excerpt)
+# actions/secrets/__main__.py (operator repository, excerpt)
 def handle_additional_env(user_data, env):
     old_env = env_to_dict(user_data, 'userenv')
     added_keys   = [k for k in env if k not in old_env and env[k]]
@@ -233,60 +268,60 @@ def handle_additional_env(user_data, env):
     removed_keys = [k for k in old_env if k not in new_env]
     return new_env, added_keys, changed_keys, removed_keys
 ```
+
 ---
+
 ### Listing 12-8. operator-clusterroles.yaml — ClusterRole for infrastructure and TLS management
+
 ```yaml
-# olaris/setup/kubernetes/roles/operator-clusterroles.yaml (condensed)
+# setup/kubernetes/roles/operator-clusterroles.yaml (condensed)
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: nuvolaris-operator-cr
+  name: openserverless-operator-cr
 rules:
-  # Read-only cluster discovery
-  - apiGroups: ['']
-    resources: ['nodes', 'namespaces']
-    verbs: ['get', 'list', 'watch']
-
-  # Manage CRDs and RBAC (includes 'escalate' to bind higher roles)
-  - apiGroups: ['apiextensions.k8s.io']
-    resources: ['customresourcedefinitions']
-    verbs: ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete']
-  - apiGroups: ['rbac.authorization.k8s.io']
-    resources: ['clusterroles', 'clusterrolebindings', 'rolebindings', 'roles']
-    verbs: ['get', 'list', 'watch', 'create', 'update', 'patch',
-            'delete', 'escalate', 'bind']
-
-  # TLS: full control over cert-manager issuers and clusterissuers
-  - apiGroups: ['cert-manager.io']
-    resources: ['issuers', 'clusterissuers', 'certificates']
-    verbs: ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete']
-
-  # Ingress management (nginx + traefik)
-  - apiGroups: ['networking.k8s.io']
-    resources: ['ingresses', 'ingresses/status', 'ingressclasses']
-    verbs: ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete']
+# Read-only cluster discovery
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["storage.k8s.io"]
+  resources: ["storageclasses"]
+  verbs: ["get", "list", "watch"]
+# Namespaces, CRDs, and RBAC objects (no escalate or bind)
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: [get, list, watch, create, update, patch, delete]
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: [get, list, watch, create, update, patch, delete]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: [clusterroles, clusterrolebindings, rolebindings, roles]
+  verbs: [get, list, watch, create, update, patch, delete]
+# TLS: read certificates, full control over issuers and clusterissuers
+- apiGroups: ["cert-manager.io"]
+  resources: ["certificates"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["cert-manager.io"]
+  resources: ["issuers", "clusterissuers"]
+  verbs: [get, list, watch, create, update, patch, delete]
+# Ingress management (nginx + traefik)
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: [get, list, watch, create, update, patch, delete]
 ```
+
 ---
-### Listing 12-9. Operational security commands — certificates, secrets retrieval, and docx validation
+
+### Listing 12-9. Operational security commands — certificates, cert-manager logs, and secrets retrieval
+
 ```bash
-# Verify TLS resources in a running cluster
-kubectl -n nuvolaris get ClusterIssuers,Certificates,CertificateRequests,Orders,Challenges
+# Verify TLS resources in a running cluster (same as ops debug certs)
+kubectl -n openserverless get \
+  ClusterIssuers,Certificates,CertificateRequests,Orders,Challenges
 
 # Monitor cert-manager logs
 kubectl -n cert-manager logs -l app=cert-manager
 
-# Verify fonts and image types in the generated docx
-unzip -p chapter.docx word/styles.xml | grep -o 'w:ascii="[^"]*"' | sort -u
-unzip -l chapter.docx | grep media   # must show .png, not .undefined
-unzip -p chapter.docx '[Content_Types].xml' | grep -o '<Default[^/]*/>'
-
 # Retrieve live secrets from a running cluster (useful after cluster rebuild)
 ops update secrets
-
-# Validate all section headings start with numeric prefix
-# (run against generated XML after unzipping .docx)
-unzip -p chapter.docx word/document.xml \
-  | grep -oP '(?<=<w:t>)[^<]+' \
-  | grep -E '^1[0-9]\.' | head -30
 ```
----

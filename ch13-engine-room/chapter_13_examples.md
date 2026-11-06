@@ -1,7 +1,7 @@
 # Chapter 13 — Engine Room — Code Listings
 > Source: Apache OpenWhisk codebase (github.com/apache/openwhisk, `master` branch) — architectural
 > reference excerpts, not code developed for this book or for the OpenServerless project itself.
-> These are the real listings used in Chapter 13 of *Apache OpenServerless: The Complete Guide* (Apress).
+> These are the real listings used in Chapter 13 of *Mastering Apache OpenServerless* (Apress).
 > Apache OpenWhisk is licensed under the Apache License 2.0; excerpts are reproduced here for
 > educational commentary with source paths noted per listing.
 
@@ -164,12 +164,12 @@ def schedule(
 ### Listing 13-6. Timing a single invocation end to end
 Operational command, not source code.
 ```bash
-$ wsk -i action invoke /guest/hello --param name World --blocking --result
+$ ops action invoke hello --param name World --blocking --result
 {
     "greeting": "Hello World"
 }
 
-$ wsk -i activation get --last | jq '{start, end, duration,
+$ ops activation get --last | jq '{start, end, duration,
     init: .annotations[] | select(.key=="initTime")}'
 ```
 
@@ -178,27 +178,27 @@ $ wsk -i activation get --last | jq '{start, end, duration,
 ### Listing 13-7. Isolating database query latency in the controller logs
 Operational command, not source code.
 ```bash
-$ kubectl -n nuvolaris logs deploy/controller --tail=500 \
+$ kubectl -n openserverless logs sts/controller --tail=500 \
     | grep -E 'DATABASE_(BATCH_)?(GET|SAVE|QUERY)'
 
 # a healthy warm-path invocation shows three short database markers:
 #   DATABASE_GET   subjects   ~2-5 ms
 #   DATABASE_GET   whisks     ~2-5 ms
 #   DATABASE_SAVE  activations  ~3-8 ms
-# a slow or cold FerretDB pod will show these numbers climbing
+# a slow or overloaded CouchDB will show these numbers climbing
 # into the tens of milliseconds, and that climb tracks directly
 # with the total invocation latency you measured above.
 ```
 
 ---
 
-### Listing 13-8. Reproducing a CouchDB / FerretDB MVCC conflict
+### Listing 13-8. Reproducing a CouchDB MVCC conflict
 Operational command, not source code.
 ```bash
 # terminal 1
-$ wsk -i action update myAction --param stage v1 &
+$ ops action update myAction --param stage v1 &
 # terminal 2, fired immediately after
-$ wsk -i action update myAction --param stage v2
+$ ops action update myAction --param stage v2
 error: Unable to update action 'myAction':
   Document update conflict.
 ```

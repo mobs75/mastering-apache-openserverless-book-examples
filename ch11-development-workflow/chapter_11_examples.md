@@ -1,12 +1,12 @@
 # Chapter 11 — Development Workflow
 ## Code Listings
 
-> Source: Apache OpenServerless codebase — `testing/tasks/ide/deploy/` and related paths.
-> These are the real listings used in Chapter 11 of *Apache OpenServerless: The Complete Guide* (Apress).
+> These are the listings used in Chapter 11 of *Mastering Apache OpenServerless* (Apress),
+> aligned with the Apache OpenServerless 0.9.0-incubating release.
 
 ---
 
-### Listing 11-1. Canonical OpenServerless project layout
+### Listing 11-1. Canonical OpenServerless project layout showing single-file actions, multi-file zip actions, and manifest-based deployments
 
 ```
 my-app/
@@ -29,9 +29,7 @@ my-app/
 
 ---
 
-### Listing 11-2. `scan.js` — the `scan()` function
-
-Source: `testing/tasks/ide/deploy/scan.js`
+### Listing 11-2. scan.js — the scan() function that discovers and deploys all action types in order
 
 ```javascript
 export async function scan() {
@@ -71,9 +69,11 @@ export async function scan() {
   for (const pkg of packages) await deployPackage(pkg);
   for (const action of deployments) await deployAction(action);
 
-  // 5. YAML manifests
-  const manifestGlobs = ['packages/*.yaml', 'packages/*/*.yaml'];
-  for (const manifest of await glob(...manifestGlobs))
+  // 5. YAML manifests (glob list also configurable)
+  const manifestGlobs = await getOpenServerlessConfig('manifests',
+    ['packages/*.yaml', 'packages/*/*.yaml']);
+  // ... collect and sort the manifests, load packages/.env ...
+  for (const manifest of manifests)
     await deployProject(manifest);
 
   syncDeployInfo(packages, deployments);
@@ -82,9 +82,7 @@ export async function scan() {
 
 ---
 
-### Listing 11-3. `deploy.js` — `extractArgs()` reads inline comment flags
-
-Source: `testing/tasks/ide/deploy/deploy.js`
+### Listing 11-3. deploy.js — extractArgs() reads # -- and // -- comment lines and converts them to CLI flags
 
 ```javascript
 async function extractArgs(files) {
@@ -108,7 +106,7 @@ async function extractArgs(files) {
 
 ---
 
-### Listing 11-4. Python action with inline arg annotations
+### Listing 11-4. Python action using inline arg annotations for web exposure and resource limits
 
 ```python
 # packages/mypkg/hello.py
@@ -125,9 +123,7 @@ def main(args):
 
 ---
 
-### Listing 11-5. `deploy.js` — `deployAction()` with concurrency guard
-
-Source: `testing/tasks/ide/deploy/deploy.js`
+### Listing 11-5. deploy.js — deployAction() with concurrency guard, inline-arg extraction, and queue processing
 
 ```javascript
 export async function deployAction(artifact) {
@@ -162,9 +158,7 @@ export async function deployAction(artifact) {
 
 ---
 
-### Listing 11-6. `deploy.js` — `deployProject()` for wskdeploy manifests
-
-Source: `testing/tasks/ide/deploy/deploy.js`
+### Listing 11-6. deploy.js — deployProject() deploys a wskdeploy YAML manifest via ops -wsk project deploy
 
 ```javascript
 export async function deployProject(artifact) {
@@ -183,105 +177,90 @@ export async function deployProject(artifact) {
 
 ---
 
-### Listing 11-7. `testing/test-runtimes/manifest.yaml` — multi-package wskdeploy manifest
-
-Source: `testing/test-runtimes/manifest.yaml`
+### Listing 11-7. testing/test-runtimes/manifest.yaml — multi-package manifest with shared service inputs
 
 ```yaml
 packages:
   javascript:
     inputs:
-      redis_url:   ${REDIS_URL}
+      redis_url: ${REDIS_URL}
+      redis_prefix: ${REDIS_PREFIX}
       mongodb_url: ${MONGODB_URL}
       postgres_url: ${POSTGRES_URL}
-      s3_access:   ${S3_ACCESS_KEY}
-      s3_secret:   ${S3_SECRET_KEY}
-      s3_host:     ${S3_HOST}
-      s3_port:     ${S3_PORT}
-      s3_data:     ${S3_BUCKET_DATA}
+      s3_access: ${S3_ACCESS_KEY}
+      s3_secret: ${S3_SECRET_KEY}
+      s3_host: ${S3_HOST}
+      s3_port: ${S3_PORT}
+      s3_data: ${S3_BUCKET_DATA}
     actions:
       hello:
         function: javascript/hello.js
       redis:
         function: javascript/redis.js
-      minio:
-        function: javascript/minio.js
+      mongodb:
+        function: javascript/mongodb.js
+      postgres:
+        function: javascript/postgres.js
+      seaweed:
+        function: javascript/seaweed.js
   python:
     inputs:
-      redis_url:    ${REDIS_URL}
-      mongodb_url:  ${MONGODB_URL}
-      mongodb_db:   ${MONGODB_DB}
-      postgres_url: ${POSTGRES_URL}
+      redis_url: ${REDIS_URL}
+      mongodb_db: ${MONGODB_DB}
       # ... same service credentials ...
     actions:
       hello:
         function: python/hello.py
-      redis:
-        function: python/redis.py
-      minio:
-        function: python/minio.py
+      # ... redis, mongodb, postgres, seaweed ...
 ```
 
 ---
 
-### Listing 11-8. `build-venv.sh` — Python virtualenv build script
-
-Source: `testing/tasks/ide/python/build-venv.sh`
+### Listing 11-8. ide/python/build-venv.sh in the ops task bundle — creates a virtualenv and packages it into the action zip
 
 ```bash
 #!/bin/bash
-# Creates a Python virtualenv and packages it as a zip artifact.
-
-PKG=$1
-ACT=$2
-DIR="packages/$PKG/$ACT"
-
+# ide/python/build-venv.sh (license header omitted)
+DIR="${1:?directory}"
+ZIP="${2:?zip file}"
 cd "$DIR"
-virtualenv virtualenv
-source virtualenv/bin/activate
-pip install -r requirements.txt
-deactivate
-
-# Package source files + virtualenv into a zip
-cd ..
-7zz a -r "${ACT}.zip" "$ACT"
-echo "Built: packages/${PKG}/${ACT}.zip"
-```
-
----
-
-### Listing 11-9. `build-node.sh` — Node.js dependency bundle script
-
-Source: `testing/tasks/ide/nodejs/build-node.sh`
-
-```bash
-#!/bin/bash
-# Installs npm/bun dependencies and packages the action as a zip.
-
-PKG=$1
-ACT=$2
-DIR="packages/$PKG/$ACT"
-
-cd "$DIR"
-# Use bun for fast installs; falls back to npm
-if command -v bun &>/dev/null; then
-  bun install
-else
-  npm install
+if ! test -d virtualenv
+then uv venv virtualenv --python=/usr/bin/python3
 fi
-
-cd ..
-7zz a -r "${ACT}.zip" "$ACT"
-echo "Built: packages/${PKG}/${ACT}.zip"
+uv pip install --python=virtualenv/bin/python -r requirements.txt
+if test -f "$ZIP"
+  then rm "$ZIP"
+fi
+7zz a "$ZIP" -tzip virtualenv >/dev/null
+ls -l $ZIP
+date >virtualenv/date
 ```
 
 ---
 
-### Listing 11-10. `syncDeployInfo.js` — deployment state file management
+### Listing 11-9. ide/nodejs/build-node.sh in the ops task bundle — installs the dependencies with Bun and packages them into the action zip
 
-Source: `testing/tasks/ide/deploy/syncDeployInfo.js`
+```bash
+#!/bin/bash
+# ide/nodejs/build-node.sh (license header omitted)
+DIR="${1:?directory}"
+ZIP="${2:?zip file}"
+cd "$DIR"
+bun install
+if test -f "$ZIP"
+then rm "$ZIP"
+fi
+7zz a "$ZIP" -tzip node_modules >/dev/null
+ls -l $ZIP
+```
+
+---
+
+### Listing 11-10. syncDeployInfo.js — writes and resets the .ops/deployment.json state file
 
 ```javascript
+// ide/deploy/syncDeployInfo.js (excerpt)
+
 export function syncDeployInfo(packages, deployments) {
   if (!existsSync('.ops')) mkdirSync('.ops', { recursive: true });
 
@@ -310,46 +289,50 @@ export function cleanupDeployInfo() {
 
 ---
 
-### Listing 11-11. `watch.js` — chokidar watcher with SKIPDIR and debounce
-
-Source: `testing/tasks/ide/deploy/watch.js`
+### Listing 11-11. watch.js — chokidar watcher with SKIPDIR exclusions and write-stability detection
 
 ```javascript
-const SKIPDIR = ['virtualenv', 'node_modules', '__pycache__', '.git', '.ops'];
+// ide/deploy/watch.js (excerpt)
+const SKIPDIR = ["virtualenv", "node_modules", "__pycache__"];
 
-export async function watch(dir, handler) {
-  globalWatcher = chokidar.watch(dir, {
-    ignored: (p) => {
-      const parts = p.split(path.sep);
-      return parts.some(part => SKIPDIR.includes(part));
-    },
-    persistent: true,
-    ignoreInitial: true,
-  });
+export const watcherOptions = {
+  persistent: true,
+  ignoreInitial: true,
+  recursive: true,
+  // wait until a file has been stable for 500 ms
+  awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
+  atomic: 250,
+  ignored: (file) => shouldIgnoreFile(file), // *.zip, *.tmp
+};
 
-  // Debounce: collect rapid changes and fire once
-  let debounceTimer;
-  const pending = new Set();
+export async function checkAndDeploy(changeType, path) {
+  path = resolve(path);
+  const src = path.slice(process.cwd().length + 1);
+  if (changeType !== 'change' || !src) return;
+  for (const dir of src.split('/').slice(0, -1)) {
+    if (SKIPDIR.includes(dir)) return;
+  }
+  await deploy(src);
+}
 
-  globalWatcher.on('all', (event, changedPath) => {
-    pending.add(changedPath);
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(async () => {
-      const files = [...pending];
-      pending.clear();
-      for (const f of files) await handler(f);
-    }, 300);
+export async function watchAndDeploy() {
+  await serve(); // ops ide serve, or the "devel" command
+  await logs();  // ops activation poll, or the "logs" command
+  globalWatcher = watch('packages', watcherOptions);
+  globalWatcher.on('all', async (event, path) => {
+    try { await checkAndDeploy(event, path); }
+    catch (error) { console.error(error); }
   });
 }
 ```
 
 ---
 
-### Listing 11-12. `serve.js` — static asset server with proxy fallback
-
-Source: `testing/tasks/ide/deploy/serve.js`
+### Listing 11-12. serve.js — static file serving with ETag caching and proxy fallback to the remote OpenServerless host
 
 ```javascript
+// ide/deploy/serve.js (excerpt)
+
 Bun.serve({
   port: serverPort,
   hostname: flags.host,
@@ -383,39 +366,43 @@ Bun.serve({
 
 ---
 
-### Listing 11-13. `devcontainer.json` — VS Code devcontainer configuration
-
-Source: `testing/tasks/ide/devcontainer.json`
+### Listing 11-13. devcontainer.json — VS Code devcontainer configuration created by ops ide devcontainer (ide/devcontainer.json in the ops task bundle)
 
 ```json
 {
-  "name": "openserverless-devcontainer",
+  "name": "Agent41",
   "image": "ghcr.io/mastrogpt/agent41-starter:2506201530",
+  "remoteUser": "node",
+  "containerEnv": {
+    "OPS_BRANCH": "main",
+    "DEVCONTAINER": "1"
+  },
+  "runArgs": [ "--network=host" ],
+  "remoteEnv": {
+    "OPS_BRANCH": "main",
+    "REMOTE_CONTAINERS": "1"
+  },
+  "postCreateCommand": "ops -update",
   "customizations": {
     "vscode": {
       "extensions": [
         "ms-python.python",
-        "dbaeumer.vscode-eslint"
+        "ms-vscode.test-adapter-converter",
+        "pamaron.pytest-runner"
+        // ... more extensions ...
       ]
     }
-  },
-  "mounts": [
-    "source=${localEnv:HOME}/.wskprops,target=/root/.wskprops,type=bind"
-  ],
-  "postCreateCommand": "ops ide setup",
-  "remoteEnv": {
-    "OPS_PWD": "${containerWorkspaceFolder}"
   }
 }
 ```
 
 ---
 
-### Listing 11-14. `undeploy.js` — full project teardown
-
-Source: `testing/tasks/ide/deploy/undeploy.js`
+### Listing 11-14. undeploy.js — full project teardown by reading .ops/deployment.json and issuing delete commands
 
 ```javascript
+// ide/deploy/undeploy.js (excerpt)
+
 export function undeploy(specificAction) {
   if (specificAction) return undeployAction(specificAction);
 
@@ -441,17 +428,15 @@ export function undeploy(specificAction) {
 
 ---
 
-### Listing 11-15. `.github/workflows/tests.yaml` — three-stage CI pipeline
-
-Source: `testing/.github/workflows/tests.yaml`
+### Listing 11-15. .github/workflows/tests.yaml — the three-stage CI pipeline triggered on platform-identifying tags
 
 ```yaml
-# Triggered on tags matching *-* (e.g. k3s-0.1.2, aks-0.2.0, kind-0.3.0)
+# .github/workflows/tests.yaml (excerpt)
 name: AllTests
 on:
   push:
     tags:
-      - '*-*'
+      - '*-*'          # e.g. k3s-0.1.2, aks-0.2.0
     branches-ignore: '*'
 
 jobs:

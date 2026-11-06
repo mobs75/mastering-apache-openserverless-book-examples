@@ -14,7 +14,7 @@ Code examples for the book **"Mastering Apache OpenServerless: Building Modern S
 | ch09-deployment/ | Chapter 9 | Deploying Apache OpenServerless |
 | ch10-runtimes/ | Chapter 10 | OpenServerless Runtimes |
 | ch11-development-workflow/ | Chapter 11 | Development Workflow in Apache OpenServerless |
-| ch12-security/ | Chapter 12 | Security in OpenServerless and the ops CLI |
+| ch12-security/ | Chapter 12 | Security in OpenServerless |
 | ch13-engine-room/ | Chapter 13 | Engine Room |
 
 Chapters 1–3 are conceptual and have no companion code.
